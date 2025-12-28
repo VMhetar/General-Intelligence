@@ -1,35 +1,33 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class WorldModel(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim=256):
+    def __init__(self, z_dim, action_dim, hidden=256):
         super().__init__()
-
         self.net = nn.Sequential(
-            nn.Linear(state_dim + action_dim, hidden_dim),
+            nn.Linear(z_dim + action_dim, hidden),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden, hidden),
             nn.ReLU()
         )
 
-        self.mean = nn.Linear(hidden_dim, state_dim)
-        self.logvar = nn.Linear(hidden_dim, state_dim)
+        self.delta = nn.Linear(hidden, z_dim)
+        self.logvar = nn.Linear(hidden, z_dim)
+        self.reward = nn.Linear(hidden, 1)
+        self.done = nn.Linear(hidden, 1)
 
-    def forward(self, state, action):
-        x = torch.cat([state, action], dim=-1)
+    def forward(self, z, a):
+        x = torch.cat([z, a], dim=-1)
         h = self.net(x)
 
-        mean = self.mean(h)
+        delta = self.delta(h)
         logvar = self.logvar(h).clamp(-5, 2)
 
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
 
-        next_state = state + mean + eps * std
-        return next_state, mean, logvar
+        z_next = z + delta + eps * std
+        r = self.reward(h)
+        d = torch.sigmoid(self.done(h))
 
-def loss_fn(pred_mean, pred_logvar, target):
-    inv_var = torch.exp(-pred_logvar)
-    mse = (pred_mean - target) ** 2
-    return (mse * inv_var + pred_logvar).mean()
+        return z_next, logvar, r, d
