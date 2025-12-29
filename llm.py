@@ -1,47 +1,54 @@
 import os
-import logging
 import httpx
 import asyncio
 from mcp.server.fastmcp import FastMCP
 from world_model import WorldModel
 
-mcp = FastMCP('General-Intelligence')
+mcp = FastMCP("General-Intelligence")
 
-url = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-api_key = os.getenv("OPENROUTER_API_KEY")
-
-headers = {
-    "Authorization": f"Bearer {api_key}",
+HEADERS = {
+    "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json"
 }
 
-prompt = f"""
-You are an intlligent languge interpreter. 
-Your task is to:
-- See the world model.
-- Understand the undergoing physics.
-- Interpret the situations to generalize the understand and creating rules for transfer learning.
-"""
+# --------------------------------------------------
+# Low-level LLM call (language only, no physics)
+# --------------------------------------------------
 @mcp.tool()
-async def llm_call(prompt: str):
+async def llm_call(system_prompt: str, user_prompt: str) -> str:
     data = {
         "model": "openai/gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, json=data)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            OPENROUTER_URL,
+            headers=HEADERS,
+            json=data
+        )
+        response.raise_for_status()
         result = response.json()
-        return result['choices'][0]['message']['content']
 
+    return result["choices"][0]["message"]["content"]
+
+
+# --------------------------------------------------
+# Numeric → symbolic adapter
+# --------------------------------------------------
 def summarize_dynamics(z, z_next, logvar, r, d):
     delta = (z_next - z).detach()
 
-    summary = {
+    return {
         "state_change": {
             "magnitude": float(delta.norm()),
-            "dominant_dims": delta.abs().topk(3).indices.tolist()
+            "dominant_dimensions": delta.abs().topk(3).indices.tolist()
         },
         "uncertainty": {
             "mean": float(logvar.mean()),
@@ -51,25 +58,37 @@ def summarize_dynamics(z, z_next, logvar, r, d):
         "termination_risk": float(d.item())
     }
 
-    return summary
 
-async def interpret_world_model(world_model: WorldModel, z, a):
-    z_next, logvar, r, d = world_model(z, a)
+# --------------------------------------------------
+# Interpretation interface (LLM role = meaning)
+# --------------------------------------------------
+async def interpret_world_model(world_model: WorldModel, z, action):
+    z_next, logvar, reward, done = world_model(z, action)
 
-    summary = summarize_dynamics(z, z_next, logvar, r, d)
+    summary = summarize_dynamics(z, z_next, logvar, reward, done)
 
-    prompt = f"""
+    system_prompt = """
 You are a language interpreter for a physical world model.
-Here is a summarized transition:
-{summary}
 
-Your task:
-1. Describe what kind of physical behavior this suggests.
-2. Identify whether the dynamics appear stable, unstable, or uncertain.
-3. Propose high-level rules that could transfer to similar environments.
-
-Do NOT speculate beyond the given information.
+Rules:
+- You do NOT predict physics.
+- You do NOT invent hidden variables.
+- You ONLY interpret the given summary.
+- If information is insufficient, say so.
 """
 
-    interpretation = await llm_call(prompt)
+    user_prompt = f"""
+Here is a summarized state transition:
+
+{summary}
+
+Tasks:
+1. Describe what kind of physical behavior this suggests.
+2. Judge whether the system appears stable, unstable, or uncertain.
+3. Propose high-level rules that could transfer to similar environments.
+
+Do NOT speculate beyond the information given.
+"""
+
+    interpretation = await llm_call(system_prompt, user_prompt)
     return interpretation
