@@ -51,32 +51,24 @@ class CausalAgent:
         Full cognitive step:
         encode → predict → analyze → interpret
         """
-
-        # 1. Encode observation into latent state
         z = self.encoder(observation)
 
-        # 2. Predict physics
         z_next, logvar, reward, done = self.world_model(z, action)
 
-        # 3. Decompose into causal variables
         causes = self.split_into_causes(z)
 
-        # 4. Measure causal influence
         influence_scores = self.causal_model.influence_profile(
             causes, action
         )
 
-        # 5. Prune weak causes
         active_causes = self.causal_model.prune_causes(
             influence_scores
         )
 
-        # 6. Interpret with language (no gradients, no physics)
         interpretation = await interpret_world_model(
             self.world_model, z, action
         )
 
-        # 7. Store belief (optional)
         self.beliefs.append({
             "influence": influence_scores,
             "active_causes": active_causes,
