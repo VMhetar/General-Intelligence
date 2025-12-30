@@ -24,7 +24,6 @@ class CausalAgent:
         self.num_causes = causal_model.num_causes
         self.cause_dim = causal_model.cause_dim
 
-        # Optional long-term belief memory
         self.beliefs = []
 
     # --------------------------------------------------
