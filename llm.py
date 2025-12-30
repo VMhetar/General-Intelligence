@@ -45,10 +45,12 @@ async def llm_call(system_prompt: str, user_prompt: str) -> str:
 def summarize_dynamics(z, z_next, logvar, r, d):
     delta = (z_next - z).detach()
 
-    return {
+    k = min(3, delta.numel())
+
+    summary = {
         "state_change": {
             "magnitude": float(delta.norm()),
-            "dominant_dimensions": delta.abs().topk(3).indices.tolist()
+            "dominant_dimensions": delta.abs().topk(k).indices.tolist()
         },
         "uncertainty": {
             "mean": float(logvar.mean()),
@@ -58,7 +60,7 @@ def summarize_dynamics(z, z_next, logvar, r, d):
         "termination_risk": float(d.item())
     }
 
-
+    return summary
 # --------------------------------------------------
 # Interpretation interface (LLM role = meaning)
 # --------------------------------------------------
