@@ -9,7 +9,11 @@ from agent import CausalAgent
 
 
 async def main():
-    # ----- setup -----
+    torch.manual_seed(0)
+
+    # --------------------------------------------------
+    # Setup
+    # --------------------------------------------------
     env = ToyPhysicsEnv(gravity=-9.8)
 
     encoder = IdentityEncoder()
@@ -31,12 +35,43 @@ async def main():
         causal_model=causal_model
     )
 
-    # ----- run -----
+    # --------------------------------------------------
+    # 1️⃣ Train the world model (CRUCIAL)
+    # --------------------------------------------------
+    optimizer = torch.optim.Adam(world_model.parameters(), lr=1e-3)
+
+    print("\n--- Training world model ---")
+    for epoch in range(1000):
+        obs = env.reset()
+
+        for _ in range(10):
+            action = torch.randn(1) * 0.1
+
+            z = encoder(obs)
+            z_next_pred, _, _, _ = world_model(z, action)
+
+            obs_next, _, _ = env.step(action)
+            z_true = encoder(obs_next)
+
+            loss = ((z_next_pred - z_true) ** 2).mean()
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            obs = obs_next
+
+        if epoch % 200 == 0:
+            print(f"Epoch {epoch} | loss = {loss.item():.6f}")
+
+    # --------------------------------------------------
+    # 2️⃣ Run with normal gravity
+    # --------------------------------------------------
     obs = env.reset()
 
     print("\n--- Running with normal gravity ---")
     for t in range(10):
-        action = torch.tensor([0.0])  # no force
+        action = torch.tensor([0.0])
         result = await agent.step(obs, action)
 
         obs, _, done = env.step(action)
@@ -49,7 +84,9 @@ async def main():
         if done:
             break
 
-    # ----- change physics (THIS IS THE TEST) -----
+    # --------------------------------------------------
+    # 3️⃣ Flip gravity (THIS IS THE TEST)
+    # --------------------------------------------------
     env.gravity = +9.8
     obs = env.reset()
 
