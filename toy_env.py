@@ -6,7 +6,6 @@ class ToyPhysicsEnv:
         self.reset()
 
     def reset(self):
-        # [position, velocity, gravity]
         self.state = torch.tensor([0.0, 0.0, self.gravity])
         return self.state.clone()
 
