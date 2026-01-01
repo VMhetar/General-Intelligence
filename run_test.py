@@ -125,7 +125,7 @@ async def main():
             break
 
     # --------------------------------------------------
-    #  OPTIONAL: Selective repair (if something broke)
+    #  OPTIONAL: Selective repair 
     # --------------------------------------------------
     if broken_causes:
         print("\n--- Selective repair phase ---")
