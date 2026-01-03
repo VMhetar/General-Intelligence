@@ -1,9 +1,15 @@
 import torch
 import torch.nn as nn
+from typing import Tuple
+
 
 class WorldModel(nn.Module):
-    def __init__(self, z_dim, action_dim, hidden=256):
+    def __init__(self, z_dim: int, action_dim: int, hidden: int = 256):
         super().__init__()
+        
+        self.z_dim = z_dim
+        self.action_dim = action_dim
+        
         self.net = nn.Sequential(
             nn.Linear(z_dim + action_dim, hidden),
             nn.ReLU(),
@@ -16,7 +22,11 @@ class WorldModel(nn.Module):
         self.reward = nn.Linear(hidden, 1)
         self.done = nn.Linear(hidden, 1)
 
-    def forward(self, z, a):
+    def forward(
+        self, 
+        z: torch.Tensor, 
+        a: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         x = torch.cat([z, a], dim=-1)
         h = self.net(x)
 
