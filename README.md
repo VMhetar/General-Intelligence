@@ -1,142 +1,90 @@
-General Intelligence — Causal World Model Experiments
+# Causal World Models — Transfer Through Intervention
 
-This repository explores causal understanding and transfer through learned world models, explicit interventions, and causal influence analysis.
+This project tests whether AI can learn mechanisms that survive environmental shifts—not by retraining everything, but by identifying which causal factors broke and selectively repairing them.
 
-The goal is not to build a flashy agent or a demo environment, but to answer a harder question:
+## Core Question
 
-Can an AI learn mechanisms that survive when the world changes?
+**Can an AI learn what stays true when the world changes?**
 
-Core Idea
+Most systems generalize through memorization or rapid adaptation. This explores **causal generality**: learning structure that transfers across different dynamics.
 
-Most AI systems generalize by:
+## Architecture
 
-memorizing correlations
+```
+Observation → Encoder → Latent State (z)
+                            ↓
+                       World Model ────→ Predicted Next State
+                            ↓
+                   Causal Understanding
+                   (Interventions + Influence)
+                            ↓
+                      Causal Summary
+                            ↓
+                    LLM (Interpreter)
+                            ↓
+              Explanations / Hypotheses
+```
 
-adapting quickly
+### Modules
 
-relearning silently
+**World Model** (`world_model.py`)
+- Learns latent dynamics: `z, action → z_next`
+- Models uncertainty and rewards
+- Pure physics, no language or causality
 
-This project instead focuses on causal generality:
+**Causal Understanding** (`causal_understanding.py`)
+- Treats latent state as explicit causal slots
+- Performs do-interventions on individual causes
+- Measures counterfactual influence
+- Prunes irrelevant causes
 
-Learning what stays true when dynamics, forces, or rules change.
+**Language Interpreter** (`llm.py`)
+- Never predicts physics or sees tensors
+- Only interprets structured summaries
+- Produces transferable hypotheses
 
-To do this, the system is structured into three strictly separated modules:
+**Agent** (`agent.py`)
+- Orchestrates: predict → intervene → interpret
+- Maintains beliefs over time
 
-Architecture Overview
-Observation
-   ↓
-Encoder
-   ↓
-Latent State (z)
-   ↓
-World Model ───────────────┐
-   ↓                        │
-Predicted Next State        │
-                             ↓
-Causal Understanding        │
-(Interventions + Influence) │
-   ↓                        │
-Causal Summary              │
-                             ↓
-LLM (Interpreter)
-   ↓
-Explanations / Rules / Hypotheses
+**Transfer Protocol** (`transfer_protocol.py`)
+- Freezes learned knowledge
+- Diagnoses which causes break under distribution shift
+- Selectively unfreezes only broken causes for minimal repair
 
+## Transfer Evaluation
 
-Each module has a single responsibility.
+The system is tested by:
+1. Training on environment A (normal gravity)
+2. **Freezing all learned knowledge**
+3. Switching to environment B (inverted gravity)
+4. Measuring which causal factors destabilize
+5. Selectively repairing only broken causes
 
-Modules
-1. World Model (world_model.py)
+If nothing breaks internally when the world changes, nothing was understood causally.
 
-Learns latent dynamics:
-z, action → z_next
+## Toy Environment
 
-Models uncertainty (logvar)
+Minimal physics with:
+- Position
+- Velocity  
+- Gravity (explicit latent variable)
 
-Predicts reward and termination
+Gravity can be intervened on and flipped to test causal transfer.
 
-Contains no language, no causality, no explanations
+## Running
 
-This is the system’s physics engine.
-
-2. Causal Understanding (causal_understanding.py)
-
-Treats latent state as explicit causal slots
-
-Performs do-interventions
-
-Measures counterfactual influence
-
-Prunes irrelevant causes
-
-This is the system’s internal scientist.
-
-3. Language Interpreter (llm.py)
-
-Never predicts physics
-
-Never sees tensors
-
-Only interprets structured summaries
-
-Produces explanations and transferable rules
-
-This is the system’s theorist, not its controller.
-
-4. Agent (agent.py)
-
-Orchestrates the full cognitive loop:
-
-predict → intervene → interpret
-
-Decides what happens next
-
-Stores beliefs (optional)
-
-This is the mind loop, not a policy.
-
-
-Transfer is evaluated by internal signals:
-
-causal influence changes
-
-uncertainty spikes
-
-selective destabilization
-
-re-stabilization of invariant structure
-
-If nothing breaks internally when the world changes, nothing was understood.
-
-Toy Environment
-
-A minimal physics environment (toy_env.py) is used:
-
-Position
-
-Velocity
-
-Gravity (explicit latent variable)
-
-Gravity is treated as a latent causal factor, allowing:
-
-intervention
-
-regime changes
-
-causal transfer testing
-
-This simplicity is intentional.
-
-Running the Experiment
-1. Install requirements
+```bash
 pip install torch httpx
-
-
-Set your OpenRouter API key
-
-
-2. Run the test
+export OPENROUTER_API_KEY="your_key"
 python run_test.py
+```
 
-Please try this and tell how this current project is.
+## What This Tests
+
+- Can the system distinguish causal from correlational structure?
+- Do learned mechanisms transfer when dynamics change?
+- Can the system diagnose which specific causes broke?
+- Does selective repair work with minimal retraining?
+
+The goal isn't a working demo—it's understanding whether AI can learn reusable causal structure.
