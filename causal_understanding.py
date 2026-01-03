@@ -1,45 +1,15 @@
-"""
-This module learns, analyzes, and operates over latent causal factors
-within a world model.
-
-Each causal factor is represented as an independent neural module that
-predicts its next state conditioned on its current state and the action.
-
-The module supports:
-- Explicit interventions (do-operations) on individual causes
-- Counterfactual influence measurement
-- Stability-based influence profiling
-- Pruning of irrelevant or redundant causes
-
-Assumptions:
-- Causal factors are independent latent variables.
-- Each cause evolves conditioned only on itself and the action.
-- Cross-cause interactions are revealed via counterfactual influence.
-- Meaningful causes emerge through repeated intervention and pruning.
-"""
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import List
 
 
 class CausalUnderstanding(nn.Module):
-    """
-    This module learns to understand the set of causal factors in a world model.
-    It models each cause as a separate neural network that predicts its next state
-    Assumptions:
-    - Causal factors are independent latent variables.
-    - Each cause evolves conditioned only on itself and the action.
-    - Cross-cause interactions are captured indirectly via influence.
-    - Causes are discoverable via intervention and counterfactual impact.
-    """
-
     def __init__(self, num_causes: int, cause_dim: int, action_dim: int):
         super().__init__()
 
         self.num_causes = num_causes
         self.cause_dim = cause_dim
+        self.action_dim = action_dim
 
         self.causes = nn.ModuleList([
             nn.Sequential(
@@ -50,19 +20,14 @@ class CausalUnderstanding(nn.Module):
             for _ in range(num_causes)
         ])
 
-    def forward(self, causes: List[torch.Tensor], action: torch.Tensor):
-        """
-        Args:
-            causes: list of tensors, each shape [cause_dim]
-            action: tensor shape [action_dim]
+    def forward(self, causes: List[torch.Tensor], action: torch.Tensor) -> List[torch.Tensor]:
+        if len(causes) != self.num_causes:
+            raise ValueError(f"Expected {self.num_causes} causes, got {len(causes)}")
 
-        Returns:
-            next_causes: list of tensors, each shape [cause_dim]
-        """
         next_causes = []
-
         for c_net, c in zip(self.causes, causes):
-            delta = c_net(torch.cat([c, action], dim=-1))
+            input_tensor = torch.cat([c, action], dim=-1)
+            delta = c_net(input_tensor)
             next_causes.append(c + delta)
 
         return next_causes
@@ -73,16 +38,10 @@ class CausalUnderstanding(nn.Module):
         action: torch.Tensor,
         intervene_idx: int,
         new_value: torch.Tensor
-    ):
-        """
-        Performs a do-operation on a single causal slot.
-        This function returns the predicted next causes after intervening.
-        Args:
-            causes: list of tensors, each shape [cause_dim]
-            action: tensor shape [action_dim]
-            intervene_idx: index of the cause to intervene on
-            new_value: tensor shape [cause_dim], new value for the intervened cause
-        """
+    ) -> List[torch.Tensor]:
+        if not (0 <= intervene_idx < len(causes)):
+            raise IndexError(f"intervene_idx {intervene_idx} out of range [0, {len(causes)})")
+
         intervened_causes = [c.clone() for c in causes]
         intervened_causes[intervene_idx] = new_value.clone()
 
@@ -95,30 +54,24 @@ class CausalUnderstanding(nn.Module):
         idx: int,
         epsilon: float = 1e-2
     ) -> float:
-        """
-        Measures how much intervening on cause `idx` changes the future.
-        Returns average counterfactual impact.
-        Note:
-            This measures counterfactual sensitivity, not ground-truth causality.
-            True causal meaning emerges over repeated interventions and pruning.
+        if not (0 <= idx < len(causes)):
+            raise IndexError(f"idx {idx} out of range [0, {len(causes)})")
 
-        """
-        original_next = self.forward(causes, action)
+        with torch.no_grad():
+            original_next = self.forward(causes, action)
 
-        intervened_causes = [c.clone() for c in causes]
-        intervened_causes[idx] = (
-            intervened_causes[idx]
-            + epsilon * torch.randn_like(intervened_causes[idx])
-        )
+            intervened_causes = [c.clone() for c in causes]
+            noise = torch.randn_like(intervened_causes[idx]) * epsilon
+            intervened_causes[idx] = intervened_causes[idx] + noise
 
-        intervened_next = self.forward(intervened_causes, action)
+            intervened_next = self.forward(intervened_causes, action)
 
-        influence = 0.0
-        for o, i in zip(original_next, intervened_next):
-            influence += (o - i).norm()
-
-        influence /= len(original_next)
-        return influence.item()
+            total_influence = sum(
+                (o - i).norm().item()
+                for o, i in zip(original_next, intervened_next)
+            )
+            
+            return total_influence / len(original_next)
 
     def influence_profile(
         self,
@@ -126,20 +79,14 @@ class CausalUnderstanding(nn.Module):
         action: torch.Tensor,
         trials: int = 5
     ) -> List[float]:
-        """
-        Computes stable influence estimates for each cause.
-        """
         scores = []
 
         for i in range(len(causes)):
-            trial_scores = []
-            for _ in range(trials):
-                trial_scores.append(
-                    self.causal_influence(causes, action, i)
-                )
-            scores.append(
-                torch.tensor(trial_scores).mean().item()
-            )
+            trial_scores = [
+                self.causal_influence(causes, action, i)
+                for _ in range(trials)
+            ]
+            scores.append(sum(trial_scores) / len(trial_scores))
 
         return scores
     
@@ -148,9 +95,6 @@ class CausalUnderstanding(nn.Module):
         influence_scores: List[float],
         threshold: float = 1e-3
     ) -> List[int]:
-        """
-        Returns indices of causes worth keeping.
-        """
         return [
             i for i, score in enumerate(influence_scores)
             if score > threshold
