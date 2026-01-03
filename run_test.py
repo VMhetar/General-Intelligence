@@ -6,28 +6,26 @@ from encoder import IdentityEncoder
 from world_model import WorldModel
 from causal_understanding import CausalUnderstanding
 from agent import CausalAgent
-from transfer_protocol import TransferProtocol 
+from transfer_protocol import TransferProtocol
 
 
 async def main():
     torch.manual_seed(0)
 
-    # --------------------------------------------------
-    # Setup
-    # --------------------------------------------------
     env = ToyPhysicsEnv(gravity=-9.8)
-
     encoder = IdentityEncoder()
 
-    world_model = WorldModel(
-        z_dim=2,
-        action_dim=1
-    )
+    z_dim = 2
+    action_dim = 1
+    num_causes = 2
+    cause_dim = z_dim // num_causes
+
+    world_model = WorldModel(z_dim=z_dim, action_dim=action_dim)
 
     causal_model = CausalUnderstanding(
-        num_causes=2,
-        cause_dim=1,
-        action_dim=1
+        num_causes=num_causes,
+        cause_dim=cause_dim,
+        action_dim=action_dim
     )
 
     agent = CausalAgent(
@@ -38,12 +36,9 @@ async def main():
 
     protocol = TransferProtocol(world_model, causal_model)
 
-    # --------------------------------------------------
-    # 1️. Train the world model (World A)
-    # --------------------------------------------------
+    print("\n--- Training world model ---")
     optimizer = torch.optim.Adam(world_model.parameters(), lr=1e-3)
 
-    print("\n--- Training world model ---")
     for epoch in range(1000):
         obs = env.reset()
 
@@ -67,19 +62,13 @@ async def main():
         if epoch % 200 == 0:
             print(f"Epoch {epoch} | loss = {loss.item():.6f}")
 
-    # --------------------------------------------------
-    # 2️. FREEZE KNOWLEDGE (CRITICAL)
-    # --------------------------------------------------
     print("\n--- Freezing learned knowledge ---")
     protocol.freeze_all()
     protocol.report_trainable()
 
-    # --------------------------------------------------
-    # 3. Run with normal gravity (baseline)
-    # --------------------------------------------------
+    print("\n--- Running with normal gravity ---")
     obs = env.reset()
 
-    print("\n--- Running with normal gravity ---")
     for t in range(10):
         action = torch.tensor([0.0])
         result = await agent.step(obs, action)
@@ -94,13 +83,9 @@ async def main():
         if done:
             break
 
-    # --------------------------------------------------
-    # 4. TRANSFER TEST: Flip gravity
-    # --------------------------------------------------
+    print("\n--- Gravity flipped (TRANSFER TEST) ---")
     env.gravity = +9.8
     obs = env.reset()
-
-    print("\n--- Gravity flipped (TRANSFER TEST) ---")
     broken_causes = None
 
     for t in range(10):
@@ -114,19 +99,13 @@ async def main():
         print(" active causes:", result["active_causes"])
         print()
 
-        # Diagnose only once
         if t == 0:
-            broken_causes = protocol.diagnose_broken_causes(
-                result["influence"]
-            )
+            broken_causes = protocol.diagnose_broken_causes(result["influence"])
             print(" Broken causes detected:", broken_causes)
 
         if done:
             break
 
-    # --------------------------------------------------
-    #  OPTIONAL: Selective repair 
-    # --------------------------------------------------
     if broken_causes:
         print("\n--- Selective repair phase ---")
         protocol.unfreeze_single_cause(broken_causes[0])
@@ -154,4 +133,5 @@ async def main():
         print(" Selective repair completed")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
